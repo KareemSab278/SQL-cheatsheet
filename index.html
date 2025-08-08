@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SQL 80/20 Cheat Sheet — Examples</title>
+<style>
+body{font-family:Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial;line-height:1.5;margin:24px;color:#111}
+header{border-bottom:2px solid #eee;margin-bottom:18px;padding-bottom:12px}
+h1{margin:0;font-size:24px}
+h2{font-size:18px;margin-top:20px}
+pre{background:#f7f7f7;border-left:4px solid #ddd;padding:12px;overflow:auto}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+.section{margin-bottom:18px}
+.small{font-size:13px;color:#555}
+.note{background:#fffbe6;border:1px solid #ffecb3;padding:8px;margin:8px 0}
+.container{max-width:980px;margin:0 auto}
+.grid{display:flex;gap:12px;flex-wrap:wrap}
+.col{flex:1 1 300px;min-width:280px}
+kbd{background:#eee;border-radius:4px;padding:2px 6px;font-size:12px}
+footer{margin-top:28px;color:#666;font-size:13px;border-top:1px dashed #eee;padding-top:12px}
+.table-sample{border-collapse:collapse}
+.table-sample td, .table-sample th{border:1px solid #ddd;padding:6px}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>SQL 80/20 Cheat Sheet — Lots of Examples</h1>
+  <p class="small">Practical examples you can copy/paste. Covers the most-used SQL features needed for 80% of common tasks.</p>
+</header>
+
+<section class="section">
+  <h2>1) SELECT - basics & variations</h2>
+  <pre><code>-- Basic
+SELECT id, name, email
+FROM users;
+
+-- Select all
+SELECT * FROM users;
+
+-- Limit / Offset
+SELECT id, name FROM users
+ORDER BY created_at DESC
+LIMIT 10 OFFSET 20;
+
+-- Select distinct
+SELECT DISTINCT country FROM users;</code></pre>
+</section>
+
+<section class="section">
+  <h2>2) Filtering (WHERE)</h2>
+  <pre><code>-- Comparisons
+SELECT * FROM products WHERE price > 100 AND stock > 0;
+
+-- IN
+SELECT * FROM users WHERE role IN ('admin','editor');
+
+-- BETWEEN (inclusive)
+SELECT * FROM events WHERE event_date BETWEEN '2024-01-01' AND '2024-12-31';
+
+-- LIKE (wildcards)
+SELECT * FROM customers WHERE email LIKE '%@gmail.com';
+SELECT * FROM customers WHERE name LIKE 'S_%son'; -- underscore = single char
+
+-- NULL handling
+SELECT * FROM orders WHERE shipped_at IS NULL;
+
+-- Combined
+SELECT * FROM sales WHERE amount >= 50 AND (region = 'EMEA' OR region = 'APAC');</code></pre>
+</section>
+
+<section class="section">
+  <h2>3) JOINs — inner, left, right, full, cross</h2>
+  <pre><code>-- Inner join (only matching rows)
+SELECT u.id, u.name, o.id AS order_id, o.total
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id;
+
+-- Left join (keep all users)
+SELECT u.id, u.name, o.total
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id;
+
+-- Right join (less common; keep all orders)
+SELECT o.id, o.total, u.name
+FROM users u
+RIGHT JOIN orders o ON u.id = o.user_id;
+
+-- Full outer join (all rows from both sides; not in all DBs)
+SELECT u.id, u.name, o.id AS order_id
+FROM users u
+FULL OUTER JOIN orders o ON u.id = o.user_id;
+
+-- Cross join (cartesian product)
+SELECT p.name, c.code
+FROM products p
+CROSS JOIN currencies c
+WHERE c.code = 'USD';</code></pre>
+</section>
+
+<section class="section">
+  <h2>4) Aggregations & GROUP BY</h2>
+  <pre><code>-- Count, sum, avg, min, max
+SELECT COUNT(*) AS total_users FROM users;
+SELECT department, COUNT(*) AS cnt, AVG(salary) AS avg_salary
+FROM employees
+GROUP BY department;
+
+-- HAVING filters aggregated results
+SELECT customer_id, SUM(total) AS lifetime
+FROM orders
+GROUP BY customer_id
+HAVING SUM(total) > 1000;
+
+-- Grouping sets (advanced, in Postgres/Oracle)
+SELECT department, role, SUM(salary)
+FROM employees
+GROUP BY GROUPING SETS ((department, role), (department), (role));</code></pre>
+</section>
+
+<section class="section">
+  <h2>5) Common subqueries</h2>
+  <pre><code>-- IN with subquery
+SELECT name FROM customers
+WHERE id IN (SELECT customer_id FROM orders WHERE total > 100);
+
+-- EXISTS (faster for correlated checks)
+SELECT c.*
+FROM customers c
+WHERE EXISTS (
+  SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.total > 100
+);
+
+-- Correlated subquery (runs per row)
+SELECT p.*,
+  (SELECT AVG(rating) FROM reviews rv WHERE rv.product_id = p.id) AS avg_rating
+FROM products p;</code></pre>
+</section>
+
+<section class="section">
+  <h2>6) Common CTEs (WITH) & readable queries</h2>
+  <pre><code>-- Named subqueries for readability
+WITH high_value AS (
+  SELECT customer_id, SUM(total) total_spent
+  FROM orders
+  GROUP BY customer_id
+  HAVING SUM(total) > 1000
+)
+SELECT c.id, c.name, h.total_spent
+FROM customers c
+JOIN high_value h ON c.id = h.customer_id;
+
+-- Multiple CTEs
+WITH recent_orders AS (
+  SELECT * FROM orders WHERE created_at > now() - interval '30 days'
+), totals AS (
+  SELECT customer_id, SUM(total) AS last30
+  FROM recent_orders GROUP BY customer_id
+)
+SELECT * FROM totals ORDER BY last30 DESC LIMIT 20;</code></pre>
+</section>
+
+<section class="section">
+  <h2>7) Window functions (very handy)</h2>
+  <pre><code>-- Running totals, ranks
+SELECT
+  id, order_date, total,
+  SUM(total) OVER (PARTITION BY customer_id ORDER BY order_date) AS running_total,
+  ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date DESC) AS rn,
+  RANK() OVER (PARTITION BY category ORDER BY total DESC) AS rank_in_cat
+FROM orders;
+
+-- Top N per group pattern
+SELECT *
+FROM (
+  SELECT p.*,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY rating DESC) rn
+  FROM products p
+) x
+WHERE rn <= 3;</code></pre>
+</section>
+
+<section class="section">
+  <h2>8) INSERT / UPDATE / DELETE</h2>
+  <pre><code>-- Insert one row
+INSERT INTO users (name, email, created_at)
+VALUES ('Sam', 'sam@example.com', now());
+
+-- Insert multiple rows
+INSERT INTO tags (name) VALUES ('sql'), ('python'), ('product');
+
+-- Upsert pattern (Postgres / MySQL 8+ / SQLite)
+-- Postgres: ON CONFLICT
+INSERT INTO products (sku, name, stock)
+VALUES ('A1','Widget', 10)
+ON CONFLICT (sku) DO UPDATE SET stock = products.stock + EXCLUDED.stock;
+
+-- Update
+UPDATE users SET last_login = now() WHERE id = 42;
+
+-- Delete
+DELETE FROM sessions WHERE expires_at < now();</code></pre>
+</section>
+
+<section class="section">
+  <h2>9) Transactions & locks (basics)</h2>
+  <pre><code>-- Basic transaction
+BEGIN;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;
+
+-- Rollback on error
+BEGIN;
+-- ... statements ...
+ROLLBACK;</code></pre>
+  <p class="small">Use transactions for multi-step changes that must be atomic.</p>
+</section>
+
+<section class="section">
+  <h2>10) Indexes, keys & constraints (quick)</h2>
+  <pre><code>-- Primary key / foreign key
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE
+);
+
+CREATE TABLE orders (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  total NUMERIC(10,2)
+);
+
+-- Create an index
+CREATE INDEX idx_orders_user ON orders(user_id);
+
+-- Useful multi-column index
+CREATE INDEX idx_orders_user_date ON orders(user_id, created_at);</code></pre>
+  <p class="small">Indexes speed reads, slow writes. Add indexes on columns used in WHERE/JOIN/ORDER BY.</p>
+</section>
+
+<section class="section">
+  <h2>11) Useful functions & expressions</h2>
+  <pre><code>-- COALESCE returns first non-null
+SELECT COALESCE(phone, mobile, 'n/a') FROM contacts;
+
+-- CASE for conditional logic
+SELECT id, price,
+  CASE
+    WHEN price < 10 THEN 'cheap'
+    WHEN price < 50 THEN 'mid'
+    ELSE 'expensive'
+  END AS price_band
+FROM products;
+
+-- Casting
+SELECT '2025-01-01'::date + interval '7 days'; -- Postgres style
+SELECT CAST(amount AS integer) FROM payments;</code></pre>
+</section>
+
+<section class="section">
+  <h2>12) Performance tips (practical)</h2>
+  <ul>
+    <li>Use indexes on columns used in WHERE/ORDER BY/JOIN. </li>
+    <li>Avoid SELECT * in production; select needed columns only.</li>
+    <li>Use LIMIT when exploring large tables.</li>
+    <li>Check query plans: <code>EXPLAIN</code> / <code>EXPLAIN ANALYZE</code>.</li>
+    <li>For many inserts, use bulk INSERTs or COPY (Postgres) / LOAD DATA (MySQL).</li>
+  </ul>
+</section>
+
+<section class="section">
+  <h2>13) Examples: Real-world query patterns</h2>
+  <pre><code>-- 1) Latest order per customer
+SELECT o.*
+FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC) rn
+  FROM orders
+) o
+WHERE rn = 1;
+
+-- 2) Customers with no orders
+SELECT c.*
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.id IS NULL;
+
+-- 3) Percent of customers by country
+SELECT country, COUNT(*) * 100.0 / SUM(COUNT(*)) OVER() AS pct
+FROM customers
+GROUP BY country
+ORDER BY pct DESC;
+
+-- 4) Detect duplicates (by email)
+SELECT email, COUNT(*) cnt
+FROM users
+GROUP BY email
+HAVING COUNT(*) > 1;
+
+-- 5) Rolling 7-day active users (Postgres)
+SELECT day, COUNT(DISTINCT user_id) AS dau
+FROM (
+  SELECT generate_series(current_date - interval '29 days', current_date, '1 day')::date AS day
+) d
+LEFT JOIN events e ON e.created_at::date = d.day
+GROUP BY day
+ORDER BY day;</code></pre>
+</section>
+
+<section class="section">
+  <h2>14) Compatibility notes (MySQL / Postgres / SQLite)</h2>
+  <ul>
+    <li><strong>Postgres</strong> supports advanced types, CTEs, full JOIN, window functions, <code>ON CONFLICT</code>.</li>
+    <li><strong>MySQL</strong> supports most common features; modern versions support CTEs and window functions.</li>
+    <li><strong>SQLite</strong> is great for local/dev; some syntax differences (limited ALTER TABLE).</li>
+  </ul>
+</section>
+
+<section class="section">
+  <h2>15) Quick reference snippets</h2>
+  <pre><code>-- Count distinct
+SELECT COUNT(DISTINCT user_id) FROM logins;
+
+-- Small set pivot (manual)
+SELECT
+  user_id,
+  SUM(CASE WHEN event = 'login' THEN 1 ELSE 0 END) AS logins,
+  SUM(CASE WHEN event = 'purchase' THEN 1 ELSE 0 END) AS purchases
+FROM events
+GROUP BY user_id;
+
+-- Replace nulls with 0
+SELECT COALESCE(total,0) FROM invoices;</code></pre>
+</section>
+
+<footer>
+  <p>Printed cheat-sheet style: this page is intentionally example-heavy. Use as a reference while learning. — Good luck, and try these queries on a safe/dev DB first.</p>
+</footer>
+</div>
+</body>
+</html>
